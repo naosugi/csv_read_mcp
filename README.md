@@ -2,6 +2,17 @@
 
 Claude Desktop用のMCP Serverで、長大なCSVファイルの分析を支援するためのツールを提供します。
 
+## 大雑把な使い方
+
+https://modelcontextprotocol.io/quickstart/server 
+のPython verが動く状態にする
+
+1. csvフォルダに分析したいCSVファイルを入れる。ここにあるものだけが利用される
+2. claude_desktop_config.json のmcp serverの名前をデータに応じてそれっぽく変更し、パスを絶対パスにする。Claude Desktopの設定ファイルとしてしかるべき場所に配置する
+3. Claude Desktopを起動する
+4. （任意）dbの場合はtable_info.txtというファイルが作られ、ここを直接編集することで使われないテーブルやカラムを設定できる
+
+
 ## 概要
 
 このプロジェクトには2つの異なるサーバー実装が含まれています：
