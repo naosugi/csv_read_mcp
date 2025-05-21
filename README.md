@@ -1,4 +1,4 @@
-# MCP Server for RSS System
+# MCP Server for table data (CSS)
 
 Claude Desktop用のMCP Serverで、長大なCSVファイルの分析を支援するためのツールを提供します。
 
