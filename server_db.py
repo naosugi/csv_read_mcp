@@ -16,10 +16,48 @@ DB_PATH = "./rssystem.db"
 # Text file for storing table information
 TABLE_INFO_PATH = "./table_info.txt"
 
+def has_leading_zeros(series):
+    """
+    列に先頭0がある文字列が含まれているかチェック
+    
+    Parameters:
+    series: pandas Series
+    
+    Returns:
+    bool: 先頭0がある文字列が含まれている場合True
+    """
+    for value in series:
+        if isinstance(value, str) and value and len(value) > 1:
+            # 数字のみで構成され、先頭が0で始まり、かつ"0"単体ではない場合
+            if value.isdigit() and value[0] == '0':
+                return True
+    return False
+
+def can_convert_to_numeric(series):
+    """
+    列が数値に変換可能かチェック
+    
+    Parameters:
+    series: pandas Series
+    
+    Returns:
+    bool: 数値変換可能な場合True
+    """
+    try:
+        # 空文字列を除外してチェック
+        non_empty = series[series != '']
+        if len(non_empty) == 0:
+            return False
+        pd.to_numeric(non_empty)
+        return True
+    except:
+        return False
+
 def create_tables_from_csv(folder_path):
     """
     指定されたフォルダ内のすべてのCSVファイルを読み込み、
     SQLiteデータベースに同名のテーブルを作成する
+    先頭0がある列は文字列、純粋な数値列は数値型として保存する
     
     Parameters:
     folder_path (str): CSVファイルが格納されているフォルダのパス
@@ -46,14 +84,36 @@ def create_tables_from_csv(folder_path):
         table_name = base_name
         
         try:
-            # 一旦pandasでCSVを読み込む（データ型を推測するため）
-            df = pd.read_csv(csv_file)
+            # まず全ての列を文字列として読み込み
+            df_str = pd.read_csv(csv_file, dtype=str, keep_default_na=False)
+            df_str = df_str.fillna('')
+            
+            # 各列のデータ型を決定
+            column_types = {}
+            for column in df_str.columns:
+                if has_leading_zeros(df_str[column]):
+                    # 先頭0がある場合は文字列として保持
+                    column_types[column] = 'TEXT'
+                elif can_convert_to_numeric(df_str[column]):
+                    # 数値変換可能な場合は数値として扱う
+                    column_types[column] = 'NUMERIC'
+                else:
+                    # その他は文字列
+                    column_types[column] = 'TEXT'
+            
+            # 最終的なDataFrameを作成
+            df_final = df_str.copy()
+            for column, data_type in column_types.items():
+                if data_type == 'NUMERIC':
+                    # 空文字列をNaNに変換してから数値変換
+                    df_final[column] = df_str[column].replace('', None)
+                    df_final[column] = pd.to_numeric(df_final[column], errors='coerce')
             
             # 既存のテーブルを削除（冪等性の確保）
             cursor.execute(f"DROP TABLE IF EXISTS [{table_name}]")
             
             # CSVからSQLiteテーブルを作成
-            df.to_sql(table_name, conn, if_exists='replace', index=False)
+            df_final.to_sql(table_name, conn, if_exists='replace', index=False)
             
             # テーブルのカラム情報を取得
             cursor.execute(f"PRAGMA table_info([{table_name}])")
@@ -62,17 +122,41 @@ def create_tables_from_csv(folder_path):
             # テーブル情報を保存
             column_info = []
             for col in columns:
-                column_info.append(f"- {col[1]}: 型={col[2]}")
+                col_name = col[1]
+                sqlite_type = col[2]
+                original_type = column_types.get(col_name, 'TEXT')
+                
+                if original_type == 'NUMERIC':
+                    description = f"数値型 (SQLite: {sqlite_type})"
+                else:
+                    description = f"文字列型 (SQLite: {sqlite_type}) - 先頭0保持"
+                
+                column_info.append(f"- {col_name}: {description}")
             
             table_info.append(f"# テーブル: {table_name}")
             table_info.append(f"カラム数: {len(columns)}")
             table_info.append("カラム詳細:")
             table_info.extend(column_info)
+            
+            # サンプルデータを表示（先頭3行）
+            sample_data = df_final.head(3)
+            table_info.append("サンプルデータ（最初の3行）:")
+            for idx, row in sample_data.iterrows():
+                row_data = " | ".join([f"{col}: {val}" for col, val in row.items()])
+                table_info.append(f"  行{idx + 1}: {row_data}")
+            
             table_info.append("\n")
             
             # 作成されたテーブル名を保存
             created_tables.append(table_name)
-            print(f"テーブル作成成功: '{base_name}' → テーブル名 '{table_name}'")
+            
+            # データ型の判定結果を出力
+            type_summary = []
+            for col, dtype in column_types.items():
+                type_summary.append(f"{col}({dtype})")
+            
+            print(f"テーブル作成成功: '{base_name}' → '{table_name}' [{', '.join(type_summary)}]")
+            
         except Exception as e:
             print(f"エラー: '{base_name}' のテーブル作成に失敗しました - {str(e)}")
     
@@ -170,6 +254,8 @@ def execute_sql_query(sql_query: str) -> str:
         result = (
             f"# クエリ結果 (全{total_rows}行、表示は最大10行まで) (列数: {total_cols})\n\n"
             f"## データ\n\n{df_str}\n\n"
+            f"注意: 先頭0がある列は文字列型、純粋な数値列は数値型として保存されています。\n"
+            f"      文字列型の列で数値計算が必要な場合は CAST(column AS REAL) などで型変換してください。\n\n"
         )
         
         conn.close()
