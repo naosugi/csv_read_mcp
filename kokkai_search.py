@@ -63,8 +63,11 @@ class KokkaiAPIClient:
     
     @staticmethod
     def _validate_required_params(params: Dict[str, Any]) -> bool:
-        """必須パラメータのチェック"""
-        # 仕様書より：これらのパラメータのいずれかが必須
+        """必須パラメータのチェック（制御パラメータを除外）"""
+        # 制御パラメータ（検索条件ではない）
+        control_params = {'recordPacking', 'maximumRecords', 'startRecord'}
+        
+        # 仕様書より：これらのパラメータのいずれかが必須（検索条件として）
         required_fields = [
             'nameOfHouse', 'nameOfMeeting', 'any', 'speaker', 
             'from', 'until', 'speechNumber', 'speakerPosition', 
@@ -72,9 +75,17 @@ class KokkaiAPIClient:
             'sessionFrom', 'sessionTo', 'issueFrom', 'issueTo'
         ]
         
+        # 制御パラメータを除外して検索条件のみをチェック
+        search_params = {k: v for k, v in params.items() if k not in control_params}
+        
+        print(f"[DEBUG] Search params only: {search_params}")
+        
         for field in required_fields:
-            if field in params and params[field] is not None and str(params[field]).strip() != "":
+            if field in search_params and search_params[field] is not None and str(search_params[field]).strip() != "":
+                print(f"[DEBUG] Found required param: {field} = {search_params[field]}")
                 return True
+        
+        print(f"[DEBUG] No required search parameters found")
         return False
     
     @staticmethod
@@ -157,6 +168,8 @@ class KokkaiAPIClient:
     @staticmethod
     def _build_url(endpoint: str, params: Dict[str, Any]) -> str:
         """URLを構築"""
+        print(f"[DEBUG] Original params: {params}")
+        
         # パラメータの妥当性チェック
         validation_errors = KokkaiAPIClient._validate_params(params, endpoint)
         if validation_errors:
@@ -168,21 +181,35 @@ class KokkaiAPIClient:
             if v is not None and str(v).strip() != "":
                 clean_params[k] = str(v).strip()
         
+        print(f"[DEBUG] Clean params: {clean_params}")
+        
+        # 必須パラメータの最終確認
+        required_check = KokkaiAPIClient._validate_required_params(clean_params)
+        print(f"[DEBUG] Required params validation: {required_check}")
+        
         # URLエンコード（UTF-8）
         query_string = urllib.parse.urlencode(clean_params, encoding='utf-8')
+        print(f"[DEBUG] Query string: {query_string}")
         
-        return f"{KokkaiAPIClient.BASE_URL}/{endpoint}?{query_string}"
+        final_url = f"{KokkaiAPIClient.BASE_URL}/{endpoint}?{query_string}"
+        print(f"[DEBUG] Final URL: {final_url}")
+        
+        return final_url
     
     @staticmethod
     def _make_request(url: str) -> Dict[str, Any]:
         """APIリクエストを実行"""
         try:
+            print(f"[DEBUG] Request URL: {url}")
+            
             # User-Agentを設定
             headers = {'User-Agent': 'KokkaiMCP/1.0'}
             request = urllib.request.Request(url, headers=headers)
             
             with urllib.request.urlopen(request, timeout=30) as response:
                 content = response.read().decode('utf-8')
+                print(f"[DEBUG] Response length: {len(content)}")
+                print(f"[DEBUG] Response preview: {content[:200]}")
                 
                 # XML応答の場合の処理
                 if content.strip().startswith('<?xml'):
@@ -198,6 +225,7 @@ class KokkaiAPIClient:
         except urllib.error.HTTPError as e:
             try:
                 error_content = e.read().decode('utf-8')
+                print(f"[DEBUG] HTTP Error Content: {error_content}")
                 # エラーレスポンスがJSONの場合
                 if error_content.startswith('{'):
                     error_data = json.loads(error_content)
@@ -330,11 +358,17 @@ def search_kokkai_speeches(
     Returns:
     str: 発言検索結果
     """
+    # デフォルト値の設定（少なくとも1つの検索条件を確保）
+    if not any and not speaker and not nameOfHouse and not nameOfMeeting and not from_date and not until_date and sessionFrom is None and sessionTo is None and not speakerPosition and not speakerGroup and not speakerRole:
+        return "エラー: 検索条件を少なくとも1つ指定してください。(any, speaker, nameOfHouse, nameOfMeeting, from_date, until_date, sessionFrom, sessionTo, speakerPosition, speakerGroup, speakerRole のいずれか)"
+    
     params = {
         "recordPacking": "json",
         "maximumRecords": min(max(maximumRecords, 1), 100),
         "startRecord": max(startRecord, 1)
     }
+    
+    print(f"[DEBUG] Input parameters - any: {any}, speaker: {speaker}, nameOfHouse: {nameOfHouse}, sessionFrom: {sessionFrom}")
     
     # 検索条件パラメータを追加
     if any:
