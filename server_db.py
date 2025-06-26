@@ -155,10 +155,11 @@ def create_tables_from_csv(folder_path):
             for col, dtype in column_types.items():
                 type_summary.append(f"{col}({dtype})")
             
-            print(f"テーブル作成成功: '{base_name}' → '{table_name}' [{', '.join(type_summary)}]")
+            # print(f"テーブル作成成功: '{base_name}' → '{table_name}' [{', '.join(type_summary)}]")
             
         except Exception as e:
-            print(f"エラー: '{base_name}' のテーブル作成に失敗しました - {str(e)}")
+            # print(f"エラー: '{base_name}' のテーブル作成に失敗しました - {str(e)}")
+            return
     
     # テーブル情報をファイルに保存
     with open(TABLE_INFO_PATH, 'w', encoding='utf-8') as f:
